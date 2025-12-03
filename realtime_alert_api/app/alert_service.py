@@ -51,6 +51,7 @@ def create_and_send_alert(
         event_type=event_type,
         confidence_score=confidence,
         status="pending",
+        method="model",
     )
 
     if media_urls:
@@ -72,7 +73,7 @@ def create_and_send_alert(
     sent_ok = send_fcm_alert(recipient.fcm_token or "", alert_payload)
     alert.status = "sent" if sent_ok else "failed"
     if sent_ok:
-        alert.timestamp = alert.timestamp or datetime.utcnow()
+        alert.sent_at = datetime.utcnow()
     db.add(alert)
     db.commit()
     db.refresh(alert)

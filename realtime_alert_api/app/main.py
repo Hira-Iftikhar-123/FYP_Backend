@@ -8,11 +8,16 @@ from sqlalchemy.orm import Session
 import torch
 import torch.nn.functional as F
 import json
+import os
+import numpy as np 
 
 from . import alert_service, models
 from .database import Base, SessionLocal, engine
-from .swin_model import ViolenceSwin3D
 from .extract_frames import extract_frames
+from .swin_model import ViolenceSwin3D
+
+NORM_MEAN = np.array([0.485, 0.456, 0.406]).astype(np.float32)
+NORM_STD = np.array([0.229, 0.224, 0.225]).astype(np.float32)
 
 
 class TriggerAlertPayload(BaseModel):
@@ -35,19 +40,23 @@ def get_db():
         db.close()
 
 
-app = FastAPI(title="Realtime Theft and Violence Detection Alert API")
+app = FastAPI(title="Realtime Theft and Violence Detection")
 
-_raw_classes = json.load(open("app/classes.json"))
+_classes_path = os.path.join(os.path.dirname(__file__), "classes.json")
+_raw_classes = json.load(open(_classes_path))
 if isinstance(_raw_classes, dict):
     CLASSES = {int(k): v for k, v in _raw_classes.items()}
 else:
     CLASSES = {idx: label for idx, label in enumerate(_raw_classes)}
+    
 device = "cuda" if torch.cuda.is_available() else "cpu"
-model = ViolenceSwin3D(num_classes=len(CLASSES)).to(device)
 
-checkpoint = torch.load(
-    "../backend/model/rwf_ucf_combined_epoch5.pth", map_location=device
-)
+model = ViolenceSwin3D(num_classes=len(CLASSES)).to(device) 
+
+CHECKPOINT_FILE = "rwf_ucf_6cls_epoch5.pth"
+_project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+_checkpoint_path = os.path.join(_project_root, "backend", "model", CHECKPOINT_FILE)
+checkpoint = torch.load(_checkpoint_path, map_location=device)
 if isinstance(checkpoint, dict) and "model_state" in checkpoint:
     state_dict = checkpoint["model_state"]
 else:
@@ -56,6 +65,16 @@ else:
 model.load_state_dict(state_dict, strict=False)
 model.eval()
 
+# Define Mapping for Alert Triggering (6 prediction classes -> 3 alert types)
+PREDICTION_TO_ALERT_MAP = {
+    "violence": "violence",
+    "normal": "normal",
+    "shoplifting": "theft",
+    "stealing": "theft",
+    "robbery": "theft",
+    "burglary": "theft",
+}
+
 
 @app.on_event("startup")
 def on_startup() -> None:
@@ -63,8 +82,14 @@ def on_startup() -> None:
 
     if not firebase_admin._apps:
         try:
-            cred = credentials.Certificate("firebase_credentials.json")
-            firebase_admin.initialize_app(cred)
+            _project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            _firebase_creds_path = os.path.join(
+                _project_root,
+                "firebase_credentials.json",
+            )
+            if os.path.exists(_firebase_creds_path):
+                cred = credentials.Certificate(_firebase_creds_path)
+                firebase_admin.initialize_app(cred)
         except Exception:
             pass
 
@@ -74,33 +99,41 @@ def trigger_alert(
     payload: TriggerAlertPayload,
     db: Session = Depends(get_db),
 ):
-    valid_types = {"theft", "violence", "manual_report"}
+    valid_types = {"theft", "violence", "manual_report", "normal"} 
     if payload.event_type not in valid_types:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid event_type. Must be one of {sorted(valid_types)}",
         )
+    
+    if payload.event_type in {"theft", "violence", "manual_report"}:
+        try:
+            alert = alert_service.create_and_send_alert(
+                db,
+                camera_id=payload.camera_id,
+                event_type=payload.event_type,
+                confidence=payload.confidence,
+                media_urls=payload.media_urls,
+                media_type="video",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
-    try:
-        alert = alert_service.create_and_send_alert(
-            db,
-            camera_id=payload.camera_id,
-            event_type=payload.event_type,
-            confidence=payload.confidence,
-            media_urls=payload.media_urls,
-            media_type="video",
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-    return {"alert_id": alert.alert_id, "status": alert.status}
+        return {"alert_id": alert.alert_id, "status": alert.status}
+    
+    return {"status": "No alert triggered (Normal behavior detected)"}
 
 
 @app.post("/api/v1/detect")
-async def detect(video: UploadFile = File(...)):
+async def detect(
+    video: UploadFile = File(...), 
+    camera_id: int = 1,
+    db: Session = Depends(get_db)
+):
     video_bytes = await video.read()
 
     try:
+        # Frames are extracted as (T, H, W, C) numpy array of uint8 [0-255]
         frames, duration = extract_frames(
             video_bytes,
             num_frames=16,
@@ -111,11 +144,15 @@ async def detect(video: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=str(exc))
 
     frames = torch.tensor(frames, dtype=torch.float32)
-    frames = frames.permute(0, 3, 1, 2)
-    frames = frames / 255.0
-    frames = frames.unsqueeze(0)
-    frames = frames.permute(0, 2, 1, 3, 4)
-
+    
+    # 1. Scale to [0, 1] and Permute to (T, C, H, W)
+    frames = frames.permute(0, 3, 1, 2) / 255.0 
+    
+    # 2. Reshape to (1, C, T, H, W) for 3D model input
+    frames = frames.unsqueeze(0) # (1, T, C, H, W)
+    frames = frames.permute(0, 2, 1, 3, 4) # (1, C, T, H, W)
+    
+    # 3. Interpolate/Resize (kept for compatibility with original code's resize expectation)
     _, C, T, H, W = frames.shape
     frames = torch.nn.functional.interpolate(
         frames,
@@ -123,6 +160,10 @@ async def detect(video: UploadFile = File(...)):
         mode="trilinear",
         align_corners=False,
     )
+    mean_tensor = torch.tensor(NORM_MEAN).reshape(1, 3, 1, 1, 1).to(frames.device)
+    std_tensor = torch.tensor(NORM_STD).reshape(1, 3, 1, 1, 1).to(frames.device)
+    
+    frames = (frames - mean_tensor) / std_tensor
 
     frames = frames.to(device)
 
@@ -135,11 +176,32 @@ async def detect(video: UploadFile = File(...)):
 
         probs = F.softmax(logits, dim=1)
         conf, pred = torch.max(probs, dim=1)
-
+        
+    predicted_label = CLASSES[int(pred.item())]
+    confidence = float(conf.item())
+    
+    alert_event_type = PREDICTION_TO_ALERT_MAP.get(predicted_label, "normal")
+    
+    if alert_event_type in {"theft", "violence"}:
+        alert_payload = TriggerAlertPayload(
+            camera_id=camera_id,
+            event_type=alert_event_type,
+            confidence=confidence,
+            media_urls=[],
+        )
+        
+        alert_response = trigger_alert(alert_payload, db)
+        alert_status = alert_response.get("status", "Alert Sent")
+    else:
+        alert_status = "Normal behavior detected (No alert sent)"
+        
+    
     return {
-        "prediction": CLASSES[int(pred.item())],
-        "confidence": float(conf.item()),
+        "prediction": predicted_label, 
+        "alert_type": alert_event_type,
+        "confidence": confidence,
         "clip_duration_seconds": round(float(duration), 2),
+        "alert_status": alert_status,
     }
 
 

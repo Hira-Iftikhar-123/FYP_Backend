@@ -21,12 +21,16 @@ def create_alert(
     event_type: str,
     confidence_score: float | None,
     status: str = "pending",
+    method: str = "model",
+    user_id: int | None = None,
 ) -> models.Alert:
     alert = models.Alert(
         camera_id=camera.camera_id,
-        sent_to=recipient.user_id,
+        user_id=user_id,
+        sent_to_INT=recipient.user_id,
         event_type=event_type,
         confidence_score=confidence_score,
+        method=method,
         status=status,
     )
     db.add(alert)

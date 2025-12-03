@@ -4,7 +4,7 @@ from torchvision.models.video import swin3d_t, Swin3D_T_Weights
 
 
 class ViolenceSwin3D(nn.Module):
-    def __init__(self, num_classes: int = 3):
+    def __init__(self, num_classes: int = 6): 
         super().__init__()
         weights = Swin3D_T_Weights.KINETICS400_V1
         model = swin3d_t(weights=weights)
@@ -26,5 +26,3 @@ class ViolenceSwin3D(nn.Module):
         x = torch.flatten(x, 1)
         x = self.head(x)
         return x
-
-
