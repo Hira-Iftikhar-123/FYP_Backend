@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+pydantic
+python-multipart
+firebase-admin
+torch
+torchvision
+opencv-python
+torchaudio
+opencv-python-headless
+numpy
+pillow
