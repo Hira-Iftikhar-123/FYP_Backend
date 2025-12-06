@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+pydantic
+python-multipart
+firebase-admin
+torch
+torchvision
+opencv-python
+torchaudio
+opencv-python-headless
+numpy
+pillow
