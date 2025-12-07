@@ -1,6 +1,7 @@
+from src import models
 from fastapi import APIRouter, File, UploadFile, Depends, HTTPException
 from sqlalchemy.orm import Session
-from src.model_alert import service, models, crud, swin_model,schemas
+from src.model_alert import service, crud, swin_model,schemas
 from db import SessionLocal
 
 router = APIRouter(prefix="/api/v1", tags=["model_alert"])

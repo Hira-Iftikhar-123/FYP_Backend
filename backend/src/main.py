@@ -4,6 +4,7 @@ import firebase_admin
 from firebase_admin import credentials
 from src.user_initiated_alert.router import router as alert_router
 from src.model_alert.router import router as model_alert_router
+from src.aws.router import router as aws_router
 import db as db
 import os
 
@@ -37,3 +38,4 @@ async def read_root():
 
 app.include_router(alert_router, prefix="/alerts", tags=["User Initiated Alerts"])
 app.include_router(model_alert_router, prefix="/model", tags=["Model Alert"])
+app.include_router(aws_router, prefix="/aws", tags=["AWS"])

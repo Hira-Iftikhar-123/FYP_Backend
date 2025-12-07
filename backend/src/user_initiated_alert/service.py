@@ -1,6 +1,6 @@
 from datetime import datetime
 from db import SessionLocal
-from src.model_alert.models import Alert  # adjust import if needed
+from src.models import Alert  # adjust import if needed
 
 async def create_alert(alert_dict):
     db = SessionLocal()

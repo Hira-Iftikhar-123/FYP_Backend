@@ -1,10 +1,11 @@
 from datetime import datetime
 from typing import Any, Dict, Sequence
 
+from .. import models
 from firebase_admin import messaging
 from sqlalchemy.orm import Session
 
-from . import crud, models
+from . import crud
 
 
 def send_fcm_alert(fcm_token: str, alert_data: Dict[str, Any]) -> bool:

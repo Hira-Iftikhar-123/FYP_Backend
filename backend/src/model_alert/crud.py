@@ -2,7 +2,7 @@ from typing import List, Sequence
 
 from sqlalchemy.orm import Session
 
-from src.model_alert import models
+from src import models
 
 
 def get_user(db: Session, user_id: int) -> models.User | None:
