@@ -9,7 +9,8 @@ import torch
 import torch.nn.functional as F
 import json
 import os
-import numpy as np 
+import numpy as np
+import time 
 
 from . import alert_service, models
 from .database import Base, SessionLocal, engine
@@ -23,9 +24,6 @@ NORM_STD = np.array([0.229, 0.224, 0.225]).astype(np.float32)
 class TriggerAlertPayload(BaseModel):
     camera_id: int = Field(..., description="ID of the camera that triggered the event")
     event_type: str = Field(..., description="Event type: theft, violence, manual_report")
-    confidence: Optional[float] = Field(
-        None, description="Model confidence score for the event"
-    )
     media_urls: List[str] = Field(
         default_factory=list,
         description="List of media URLs (video/image) associated with the alert",
@@ -53,7 +51,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 model = ViolenceSwin3D(num_classes=len(CLASSES)).to(device) 
 
-CHECKPOINT_FILE = "rwf_ucf_6cls_epoch5.pth"
+CHECKPOINT_FILE = "muhafiz_swin3d_final.pth"
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 _checkpoint_path = os.path.join(_project_root, "backend", "model", CHECKPOINT_FILE)
 checkpoint = torch.load(_checkpoint_path, map_location=device)
@@ -112,7 +110,6 @@ def trigger_alert(
                 db,
                 camera_id=payload.camera_id,
                 event_type=payload.event_type,
-                confidence=payload.confidence,
                 media_urls=payload.media_urls,
                 media_type="video",
             )
@@ -128,7 +125,6 @@ def trigger_alert(
 async def detect(
     video: UploadFile = File(...), 
     camera_id: int = 1,
-    db: Session = Depends(get_db)
 ):
     video_bytes = await video.read()
 
@@ -167,43 +163,31 @@ async def detect(
 
     frames = frames.to(device)
 
+    inference_start = time.perf_counter()
     with torch.no_grad():
         if device == "cuda":
+            torch.cuda.synchronize() 
             with torch.amp.autocast(device_type="cuda"):
                 logits = model(frames)
+            torch.cuda.synchronize() 
         else:
             logits = model(frames)
 
         probs = F.softmax(logits, dim=1)
         conf, pred = torch.max(probs, dim=1)
+    inference_end = time.perf_counter()
+    inference_time = inference_end - inference_start
         
     predicted_label = CLASSES[int(pred.item())]
-    confidence = float(conf.item())
     
     alert_event_type = PREDICTION_TO_ALERT_MAP.get(predicted_label, "normal")
-    
-    if alert_event_type in {"theft", "violence"}:
-        alert_payload = TriggerAlertPayload(
-            camera_id=camera_id,
-            event_type=alert_event_type,
-            confidence=confidence,
-            media_urls=[],
-        )
-        
-        alert_response = trigger_alert(alert_payload, db)
-        alert_status = alert_response.get("status", "Alert Sent")
-    else:
-        alert_status = "Normal behavior detected (No alert sent)"
-        
     
     return {
         "prediction": predicted_label, 
         "alert_type": alert_event_type,
-        "confidence": confidence,
         "clip_duration_seconds": round(float(duration), 2),
-        "alert_status": alert_status,
+        "inference_time_seconds": round(inference_time, 4),
     }
-
 
 @app.get("/health")
 def health_check():
