@@ -1,0 +1,40 @@
+{
+  "tasks": [
+    {
+      "id": "task-1",
+      "title": "Create Profile Screen",
+      "status": "pending",
+      "asignedAgent": "createScreenAgent",
+      "description": "Create a user profile screen with avatar display, account settings, and system preferences. Should include dark/light mode toggle and notification settings.",
+      "createdAt": "2023-05-15T10:30:00.000Z",
+      "updatedAt": "2023-05-15T10:30:00.000Z"
+    },
+    {
+      "id": "task-2",
+      "title": "Add Camera Feed Details Screen",
+      "status": "pending",
+      "asignedAgent": "createScreenAgent",
+      "description": "Create detailed camera feed screen showing full-screen live video, recording controls, PTZ controls, and camera settings. Include motion detection zones configuration.",
+      "createdAt": "2023-05-15T10:30:00.000Z",
+      "updatedAt": "2023-05-15T10:30:00.000Z"
+    },
+    {
+      "id": "task-3",
+      "title": "Add Notification Settings",
+      "status": "pending",
+      "asignedAgent": "updateScreenAgent",
+      "description": "Add notification settings to the profile screen allowing users to configure alert preferences, sound settings, and escalation procedures for different alert types.",
+      "createdAt": "2023-05-15T10:30:00.000Z",
+      "updatedAt": "2023-05-15T10:30:00.000Z"
+    },
+    {
+      "id": "task-4",
+      "title": "Add Alert Details Screen",
+      "status": "pending",
+      "asignedAgent": "createScreenAgent",
+      "description": "Create detailed alert view screen showing expanded information about security incidents, including timeline, related camera feeds, evidence gallery, and resolution history.",
+      "createdAt": "2023-05-15T10:30:00.000Z",
+      "updatedAt": "2023-05-15T10:30:00.000Z"
+    }
+  ]
+}
