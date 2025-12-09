@@ -1,26 +1,25 @@
-# Video Action Recognition Backend
+To run the backend:
+- Navigate to the backend directory
+- run "uvicorn src.main:app"
 
-This repository contains the backend code for a video-based action recognition system using a Swin Transformer model.
+ENDPOINTS:
+ MODEL_ALERT ENDPOINTS
+ POST - /model/api/v1/trigger-alert 
+ payload: src.model_alert.schemas.TriggerAlertPayload
 
-## Features
-- Video frame extraction
-- Pretrained Swin model integration
-- Action classification using custom classes
-- API-ready Python backend
+ POST - /model/api/v1/detect
+ payload: payload: src.model_alert.schemas.DetectResponse
 
-## Tech Stack
-- Python 3.11
-- PyTorch
-- OpenCV
-- NumPy
+ USER_INITIATED_ALERT ENDPOINTS
 
-## Project Structure
-- `backend/main.py` – Main entry point
-- `backend/model/` – Model files and class labels
-- `backend/utils/` – Video processing utilities
-- `backend/requirements.txt` – Dependencies
+ POST - /alerts/
+ payload: src.user_initiated_alert.schemas.UserInitiatedAlertCreatSchema
+ WEBSOCKET - /ws
 
-## Setup
-```bash
-pip install -r backend/requirements.txt
-python backend/main.py
+ POST /aws/upload/file
+ Payload: 
+  file
+  alert_id
+GET /aws/upload_fule
+  Payload:
+    alert_id
