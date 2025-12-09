@@ -1,29 +1,42 @@
 from datetime import datetime
 from typing import Any, Dict, Sequence
+import logging
 
 from firebase_admin import messaging
+from firebase_admin.exceptions import FirebaseError
 from sqlalchemy.orm import Session
 
 from . import crud, models
 
+logger = logging.getLogger(__name__)
+
 
 def send_fcm_alert(fcm_token: str, alert_data: Dict[str, Any]) -> bool:
     if not fcm_token:
+        logger.warning("FCM token is missing, cannot send alert")
         return False
 
-    message = messaging.Message(
-        token=fcm_token,
-        notification=messaging.Notification(
-            title=alert_data.get("title", "Security Alert"),
-            body=alert_data.get("body", ""),
-        ),
-        data={k: str(v) for k, v in alert_data.items() if isinstance(v, (str, int, float))},
-    )
-
     try:
-        messaging.send(message)
+        message = messaging.Message(
+            token=fcm_token,
+            notification=messaging.Notification(
+                title=alert_data.get("title", "Security Alert"),
+                body=alert_data.get("body", ""),
+            ),
+            data={k: str(v) for k, v in alert_data.items() if isinstance(v, (str, int, float))},
+        )
+
+        response = messaging.send(message)
+        logger.info(f"FCM alert sent successfully. Message ID: {response}")
         return True
-    except Exception:
+    except messaging.UnregisteredError:
+        logger.error(f"FCM token is invalid or unregistered: {fcm_token[:20]}...")
+        return False
+    except FirebaseError as e:
+        logger.error(f"Firebase error while sending FCM alert: {str(e)}")
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error while sending FCM alert: {str(e)}", exc_info=True)
         return False
 
 
