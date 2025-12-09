@@ -23,3 +23,5 @@ ENDPOINTS:
 GET /aws/upload_fule
   Payload:
     alert_id
+
+POSTMAN: LINK
