@@ -25,7 +25,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Load model
 model = ViolenceSwin3D(num_classes=len(CLASSES)).to(device)
-CHECKPOINT_FILE = "rwf_ucf_6cls_epoch5.pth"
+CHECKPOINT_FILE = "final_crime_detector.pth"
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 _checkpoint_path = os.path.join(_project_root, "models", CHECKPOINT_FILE)
 checkpoint = torch.load(_checkpoint_path, map_location=device)

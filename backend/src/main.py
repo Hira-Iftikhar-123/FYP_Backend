@@ -12,7 +12,9 @@ app = FastAPI(title="Realtime Theft and Violence Detection")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*", 
+    "http://192.168.1.18:8000",
+    "ws://192.168.1.18:8000"],
     allow_methods=["*"],
     allow_headers=["*"]
 )
