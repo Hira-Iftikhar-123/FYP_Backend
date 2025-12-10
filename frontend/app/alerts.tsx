@@ -1,17 +1,19 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, TouchableOpacity, ScrollView, Image } from "react-native";
 import { Bell, AlertTriangle, Camera, MapPin, ArrowLeft, X } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { cssInterop } from "nativewind";
+import { WS_BASE_URL } from "../config"; // <--- ADDED IMPORT
 
 cssInterop(LinearGradient, { className: "style" });
 
 const AlertsScreen = () => {
   const router = useRouter();
   const [filter, setFilter] = useState("all");
-
-  const alerts = [
+  // Change alerts to a state so we can update it with WebSocket data
+  const [alerts, setAlerts] = useState([
+    // Hardcoded Alerts (Initial Data)
     {
       id: 1,
       type: "theft",
@@ -34,7 +36,55 @@ const AlertsScreen = () => {
       camera: "CAM-02",
       image: "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=900&auto=format&fit=crop&q=60",
     },
-  ];
+  ]);
+  
+  // --- WEBSOCKET CONNECTION LOGIC ---
+  useEffect(() => {
+    const ws = new WebSocket(`${WS_BASE_URL}/alerts/ws`);
+
+    ws.onopen = () => {
+      console.log("WebSocket connection opened to /ws");
+    };
+
+    ws.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        
+        // Assuming the data received from the model matches the Alert structure
+        const newAlert = {
+          id: data.alert_id || Date.now(),
+          type: data.incident_type || "theft",
+          title: data.title || "MODEL ALERT: New Incident",
+          description: data.message || "Model detected an incident.",
+          time: "just now",
+          priority: data.priority || "critical",
+          location: data.location || "Unknown Location",
+          camera: data.camera_id || "CAM-XX",
+          image: data.media_url || "https://placeholder.com/image", 
+        };
+
+        // Add the new alert to the state
+        setAlerts(prevAlerts => [newAlert, ...prevAlerts]); 
+      } catch (error) {
+        console.error("Error parsing WebSocket message:", error);
+      }
+    };
+
+    ws.onerror = (e) => {
+      console.error("WebSocket error:", e.message);
+    };
+
+    ws.onclose = (e) => {
+      console.log("WebSocket closed:", e.code, e.reason);
+    };
+
+    return () => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
+    };
+  }, []); 
+  // ------------------------------------
 
   const filteredAlerts = filter === "all" ? alerts : alerts.filter(a => a.type === filter);
 
