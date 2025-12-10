@@ -10,19 +10,48 @@ import { API_BASE_URL } from "../config";
 
 cssInterop(LinearGradient, { className: "style" });
 
-// Correct video path (inside frontend/assets)
 const sampleVideo = require("../assets/sample.mp4");
 
-// Resolve the local asset to get its URI for upload
 const sampleVideoAsset = RNImage.resolveAssetSource(sampleVideo);
 const sampleVideoUri = sampleVideoAsset.uri;
 
-// Helper to determine the file name and type
 const getFileMetaData = (uri) => {
     const filename = uri.split('/').pop().split('?')[0];
     const fileType = 'video/mp4'; 
     return { name: filename, type: fileType };
 };
+
+// --- NEW MODEL RESPONSE MODAL COMPONENT ---
+const ModelResponseModal = ({ visible, data, onClose }) => {
+    if (!data) return null;
+    
+    // Format the JSON data nicely for display in the modal
+    const formattedData = JSON.stringify(data, null, 2);
+
+    return (
+        <Modal visible={visible} transparent animationType="fade">
+            <View className="flex-1 justify-center items-center bg-black/50 p-4">
+                <View className="bg-white dark:bg-gray-800 p-6 rounded-xl w-full max-w-sm">
+                    <Text className="text-lg font-bold text-black dark:text-white mb-4">
+                        Model Detection Response
+                    </Text>
+                    
+                    <ScrollView className="max-h-64 mb-4 p-2 bg-gray-100 dark:bg-gray-700 rounded-lg border border-gray-300 dark:border-gray-600">
+                        <Text className="text-xs text-black dark:text-white font-mono">
+                            {/* Display the entire JSON response */}
+                            {formattedData}
+                        </Text>
+                    </ScrollView>
+
+                    <TouchableOpacity className="bg-purple-600 py-3 rounded-lg" onPress={onClose}>
+                        <Text className="text-center text-white font-semibold">Continue</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </Modal>
+    );
+};
+// ------------------------------------------
 
 const HomeScreen = () => {
     const router = useRouter();
@@ -30,12 +59,15 @@ const HomeScreen = () => {
 
     const [reportModalVisible, setReportModalVisible] = useState(false);
     const [confirmModalVisible, setConfirmModalVisible] = useState(false);
-    const [selectedCamera, setSelectedCamera] = useState(null);
     
-    // Holds the chosen incident type inside the modal
+    // --- NEW STATE FOR MODEL RESPONSE POPUP ---
+    const [modelResponseModalVisible, setModelResponseModalVisible] = useState(false);
+    const [modelResponseData, setModelResponseData] = useState(null);
+    // ------------------------------------------
+
+    const [selectedCamera, setSelectedCamera] = useState(null);
     const [modalIncidentType, setModalIncidentType] = useState("");
-    // Holds the chosen status inside the modal
-    const [modalStatus, setModalStatus] = useState("pending"); // Default to pending
+    const [modalStatus, setModalStatus] = useState("pending"); 
 
     const cameraFeeds = [
         { 
@@ -47,9 +79,7 @@ const HomeScreen = () => {
         }, 
     ];
     
-    // Incident types for the modal
     const incidentTypes = ["Theft", "Violence"];
-    // Status options for the modal
     const statusOptions = ["Pending", "Urgent", "Verified"];
 
     const handleReportPress = (camera) => {
@@ -60,20 +90,18 @@ const HomeScreen = () => {
     };
 
 
-    // ----------- NEW HELPER FUNCTION FOR CONDITIONAL AWS FILE UPLOAD -------------
+    // ----------- HELPER FUNCTION FOR CONDITIONAL AWS FILE UPLOAD -------------
     const uploadVideoForAlert = async (alertId) => {
         const { name, type } = getFileMetaData(sampleVideoUri);
         
         const formData = new FormData();
         
-        // Use the local asset URI for file upload
         formData.append('file', {
             uri: sampleVideoUri,
             name: name,
             type: type, // 'video/mp4'
         });
 
-        // Append the required alert_id field
         formData.append('alert_id', alertId);
 
         try {
@@ -92,40 +120,53 @@ const HomeScreen = () => {
 
         } catch (error) {
             console.error("AWS Upload Error:", error);
-            Alert.alert("AWS Upload Failed", `The alert was created, but the video upload to AWS failed: ${error.message}`);
+            Alert.alert("AWS Upload Failed", `The alert was created, but the video evidence failed to upload: ${error.message}`);
             return false;
         }
     };
-    // -------------------------------------------------------------
     
-    // ----------- NEW MOCK DETECTION FUNCTION (Simulates POST /model/api/v1/detect) -------------
-    // In a real app, this would involve sending the video to a processing service
-    const mockDetection = async (incidentType) => {
-        // --- Simulate Network Delay ---
-        await new Promise(resolve => setTimeout(resolve, 1500)); 
+    // FUNCTION: DIRECT API CALL TO MODEL DETECT ENDPOINT 
+    const runModelDetection = async (cameraId) => {
+        const { name, type } = getFileMetaData(sampleVideoUri);
+        
+        const formData = new FormData();
+        
+        // Match the backend definition: video: UploadFile = File(...)
+        formData.append('video', { 
+            uri: sampleVideoUri,
+            name: name,
+            type: type, 
+        });
 
-        // --- Mock Detection Logic ---
-        // For demonstration: Assume the model confirms the user's report 80% of the time,
-        // unless the reported type is 'Theft', which has a 50% chance of being 'Normal'
-        const confirmed = Math.random() < 0.8 && incidentType.toLowerCase() !== 'theft';
-        const theftConfirmed = incidentType.toLowerCase() === 'theft' && Math.random() > 0.5;
+        // Match the backend definition: camera_id: int = 1
+        formData.append('camera_id', cameraId); 
 
-        const result = {
-            prediction: (confirmed || theftConfirmed) ? "Event Detected" : "Normal",
-            alert_type: (confirmed || theftConfirmed) ? incidentType.toLowerCase() : "normal",
-            confidence: (confirmed || theftConfirmed) ? 0.95 : 0.99,
-            clip_duration_seconds: 5.0,
-            alert_status: "verified", // Model output status
-        };
+        try {
+            const response = await fetch(`${API_BASE_URL}/model/api/v1/detect`, { 
+                method: "POST",
+                body: formData,
+            });
 
-        // In a real app, this would be a POST request to the model's prediction service
-        console.log("Model Detection Result:", result);
-        return result;
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(`Detection failed with status ${response.status}. Detail: ${errorData.detail || 'Unknown error'}`);
+            }
+
+            // Return the DetectResponse object
+            const result = await response.json();
+            console.log("Model Detection API Result:", result);
+            return result;
+
+        } catch (error) {
+            console.error("Model Detection API Error:", error);
+            // Re-throw to be caught by the main handler
+            throw new Error(`Detection connection failure: ${error.message}`);
+        }
     }
     // -----------------------------------------------------------------------------
 
 
-    // ----------- REVISED API CALL FOR QUICK REPORT (POST /alerts/ -> mockDetection -> CONDITIONAL AWS UPLOAD) -------------
+    // ----------- REVISED API CALL FOR QUICK REPORT (SHOWING MODEL RESPONSE) -------------
     const submitQuickReport = async () => {
         const type = modalIncidentType;
 
@@ -153,7 +194,6 @@ const HomeScreen = () => {
             });
 
             if (!alertResponse.ok) {
-                // Handle alert creation errors
                 const errorData = await alertResponse.json();
                 const errorMessage = Array.isArray(errorData.detail) 
                     ? errorData.detail.map(err => `${err.loc.join('.')}: ${err.msg}`).join('\n')
@@ -163,46 +203,46 @@ const HomeScreen = () => {
                 return;
             }
 
-            // Get the ID for subsequent operations
             const alertData = await alertResponse.json();
             const alertId = alertData.alert_id || 999; 
             
-            Alert.alert("Alert Created", `Alert ID ${alertId} created. Running model detection...`);
-
-
             // STEP 2: Run Model Detection on the video
-            const detectionResult = await mockDetection(type);
-
-            let uploadSuccess = false;
-            let finalMessage = "Report submitted and processed.";
+            const detectionResult = await runModelDetection(selectedCamera.id);
             
+            // --- NEW: Display Model Response Popup ---
+            setModelResponseData(detectionResult);
+            setModelResponseModalVisible(true);
+            // ---------------------------------------
+
             // STEP 3: Conditional AWS Upload
             if (detectionResult.prediction !== "Normal") {
-                // If model detects a non-normal event, upload video to AWS
-                Alert.alert("Model Confirmed", `Model detected ${detectionResult.alert_type} with ${detectionResult.confidence.toFixed(2)} confidence. Uploading video to AWS for evidence.`);
-                uploadSuccess = await uploadVideoForAlert(alertId);
-                
-                if (uploadSuccess) {
-                     finalMessage = `Report submitted. Model confirmed ${detectionResult.alert_type}. Video uploaded to AWS.`;
-                }
+                // If model detects a non-normal event, upload video to AWS for permanent storage
+                await uploadVideoForAlert(alertId); 
             } else {
-                // Model detected a normal event
-                finalMessage = "Report submitted. Model concluded the event was Normal. Video upload skipped.";
+                // Model detected a normal event. No upload to AWS for evidence.
             }
 
-            // Show final confirmation
-            Alert.alert("Process Complete", finalMessage);
-            setConfirmModalVisible(true);
-
+            // The final confirmation modal is shown after the user dismisses the Model Response modal
+            // by setting the final confirmation step inside a continuation function/callback.
+            
         } catch (error) {
-            console.error("Quick Report Process Error:", error);
-            Alert.alert("Critical Error", "An error occurred during the reporting process.");
+            console.error("Quick Report Process Critical Error:", error);
+            Alert.alert("Process Failure", `Could not complete the reporting process. ${error.message}`);
         } finally {
             // Clear modal state
             setModalIncidentType("");
             setModalStatus("pending");
         }
     };
+    
+    // --- New handler to chain modals ---
+    const handleModelResponseClose = () => {
+        setModelResponseModalVisible(false);
+        // Once the model response is dismissed, show the final confirmation
+        setConfirmModalVisible(true);
+    };
+
+
     // -----------------------------------------------------------------------------
 
     // ... (rest of the component's return logic remains the same)
@@ -210,6 +250,7 @@ const HomeScreen = () => {
         <View className="flex-1 bg-white dark:bg-gray-900">
              {/* Header (omitted for brevity) */}
             <LinearGradient colors={["#7A288A", "#C51077"]} className="px-4 pt-12 pb-6 rounded-b-3xl">
+                {/* ... Header content ... */}
                 <View className="flex-row justify-between items-center">
                     <View className="flex-row items-center">
                         <Menu color="white" size={24} />
@@ -380,6 +421,14 @@ const HomeScreen = () => {
                     </View>
                 </View>
             </Modal>
+
+            {/* --- NEW MODEL RESPONSE MODAL INSTANCE --- */}
+            <ModelResponseModal 
+                visible={modelResponseModalVisible}
+                data={modelResponseData}
+                onClose={handleModelResponseClose}
+            />
+            {/* ------------------------------------------- */}
 
             {/* CONFIRMATION MODAL */}
             <Modal visible={confirmModalVisible} transparent animationType="fade">

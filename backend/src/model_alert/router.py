@@ -21,6 +21,17 @@ async def trigger_alert(payload: schemas.TriggerAlertPayload, db: Session = Depe
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+# @router.post("/detect", response_model=schemas.DetectResponse)
+# async def detect(
+#     video: UploadFile = File(...),
+#     camera_id: int = 1,
+#     db: Session = Depends(get_db)
+# ):
+#     try:
+#         result = await service.detect(video, camera_id, db)
+#         return result
+#     except ValueError as exc:
+#         raise HTTPException(status_code=400, detail=str(exc))
 @router.post("/detect", response_model=schemas.DetectResponse)
 async def detect(
     video: UploadFile = File(...),
@@ -28,10 +39,26 @@ async def detect(
     db: Session = Depends(get_db)
 ):
     try:
+        # ---- DEMO FIX ----
+        user = db.query(models.User).first()
+        if not user:
+            demo_user = models.User(
+                username="demo_user",
+                password_hash="demo",   # or some dummy hash
+                role="admin",           # any valid role
+                fcm_token="demo_token"
+            )
+            db.add(demo_user)
+            db.commit()
+            db.refresh(demo_user)
+            user = demo_user
+
         result = await service.detect(video, camera_id, db)
         return result
+
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
 
 @router.get("/health")
 async def health_check():
